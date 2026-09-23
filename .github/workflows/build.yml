@@ -1,0 +1,39 @@
+name: Build Nikre APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}   # "Actions" bo'limidan qo'lda ishga tushirish uchun
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodni olish
+        uses: actions/checkout@v4
+
+      - name: JDK 17 o'rnatish
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Gradle wrapper huquqlarini berish
+        run: chmod +x ./gradlew || true
+
+      - name: Gradle wrapper bo'lmasa yaratish
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 8.4
+            chmod +x ./gradlew
+          fi
+
+      - name: APK qurish (debug)
+        run: ./gradlew assembleDebug
+
+      - name: Tayyor APK'ni yuklash (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nikre-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
