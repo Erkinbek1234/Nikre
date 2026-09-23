@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Nikre" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#4A90D9</item>
+        <item name="colorPrimaryDark">#2C5F8A</item>
+        <item name="colorAccent">#4A90D9</item>
+    </style>
+</resources>
