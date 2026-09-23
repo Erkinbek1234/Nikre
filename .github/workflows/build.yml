@@ -2,8 +2,8 @@ name: Build Nikre APK
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch: {}   # "Actions" bo'limidan qo'lda ishga tushirish uchun
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,24 +16,20 @@ jobs:
       - name: JDK 17 o'rnatish
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
-      - name: Gradle wrapper huquqlarini berish
-        run: chmod +x ./gradlew || true
+      - name: Gradle'ni sozlash
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
 
-      - name: Gradle wrapper bo'lmasa yaratish
-        run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 8.4
-            chmod +x ./gradlew
-          fi
-
-      - name: APK qurish (debug)
-        run: ./gradlew assembleDebug
+      - name: APK yig'ish (debug)
+        run: gradle assembleDebug
 
       - name: Tayyor APK'ni yuklash (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: nikre-debug-apk
+          name: Nikre-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          
