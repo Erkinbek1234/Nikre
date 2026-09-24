@@ -12,21 +12,43 @@
         android:text="Nikre"
         android:textSize="32sp"
         android:textStyle="bold"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="8dp" />
 
     <TextView
         android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Boshlash uchun tugmani bosing"
-        android:textSize="16sp"
+        android:text="Ishga tushirilmoqda..."
+        android:textSize="14sp"
         android:gravity="center"
-        android:layout_marginBottom="24dp" />
+        android:textColor="#666666"
+        android:layout_marginBottom="32dp" />
 
     <Button
-        android:id="@+id/startButton"
-        android:layout_width="wrap_content"
+        android:id="@+id/micButton"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:text="🎤"
+        android:textSize="40sp"
+        android:layout_marginBottom="32dp" />
+
+    <TextView
+        android:id="@+id/heardText"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Nikre'ni ishga tushirish" />
+        android:text=""
+        android:textSize="16sp"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/responseText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#4A90D9"
+        android:gravity="center" />
 
 </LinearLayout>
