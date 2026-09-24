@@ -1,10 +1,17 @@
 package com.nikre.assistant
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.ContactsContract
+import android.provider.MediaStore
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.widget.Button
@@ -15,16 +22,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.nikre.assistant.commands.CommandProcessor
+import com.nikre.assistant.commands.CommandResult
 import java.util.Locale
 
 /**
  * Nikre'ning asosiy ekrani.
  *
- * Hozirgi bosqichda: tugmani bosib gapirish -> tizim tanib oladi (online/offline,
- * telefon sozlamalariga bog'liq) -> CommandProcessor javob tayyorlaydi -> TTS orqali
- * ovozda aytiladi.
- *
- * Keyingi bosqichlarda: "Hey Nikre" wake word va fonda doim tinglash qo'shiladi.
+ * Tugmani bosib gapirish -> tizim tanib oladi -> CommandProcessor javob/amal tayyorlaydi
+ * -> TTS orqali ovozda aytiladi va/yoki kerakli tizim amali bajariladi.
  */
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
@@ -35,6 +40,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
+    private var flashlightOn = false
 
     private val requiredPermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO
@@ -46,7 +52,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val permissionRequestCode = 1001
 
-    // Ovoz tanish natijasini qabul qilish
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -56,9 +61,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val said = results?.firstOrNull().orEmpty()
             if (said.isNotBlank()) {
                 heardText.text = "Siz aytdingiz: \"$said\""
-                val response = CommandProcessor.process(said)
-                responseText.text = response
-                speak(response)
+                handleCommand(said)
             } else {
                 statusText.text = "Hech narsa eshitilmadi, qayta urining."
             }
@@ -87,11 +90,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // TTS tayyor bo'lganda chaqiriladi
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val result = tts.setLanguage(Locale("uz"))
-            // Agar o'zbek tili qurilmada bo'lmasa, ruscha yoki inglizchaga tushamiz
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 tts.setLanguage(Locale.US)
             }
@@ -102,10 +103,112 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun handleCommand(said: String) {
+        when (val result = CommandProcessor.process(applicationContext, said)) {
+            is CommandResult.Speak -> respond(result.text)
+
+            is CommandResult.OpenUrl -> {
+                respond(result.speakText)
+                safeStart(Intent(Intent.ACTION_VIEW, Uri.parse(result.url)))
+            }
+
+            is CommandResult.OpenDialer -> {
+                respond(result.speakText)
+                safeStart(Intent(Intent.ACTION_DIAL))
+            }
+
+            is CommandResult.OpenSystemAction -> {
+                respond(result.speakText)
+                val intent = when (result.action) {
+                    "SETTINGS" -> Intent(Settings.ACTION_SETTINGS)
+                    "CAMERA" -> Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+                    "GALLERY" -> Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                    "CONTACTS" -> Intent(Intent.ACTION_VIEW, ContactsContract.Contacts.CONTENT_URI)
+                    "SMS" -> Intent(Intent.ACTION_VIEW, Uri.parse("sms:"))
+                    else -> null
+                }
+                intent?.let { safeStart(it) }
+            }
+
+            is CommandResult.OpenAppByName -> {
+                val launched = openAppByName(result.query)
+                if (launched) {
+                    respond(result.speakText)
+                } else {
+                    respond("\"${result.query}\" nomli ilova topilmadi.")
+                }
+            }
+
+            is CommandResult.ToggleFlashlight -> {
+                respond(result.speakText)
+                toggleFlashlight()
+            }
+
+            is CommandResult.ChangeVolume -> {
+                respond(result.speakText)
+                changeVolume(result.up)
+            }
+        }
+    }
+
+    private fun respond(text: String) {
+        responseText.text = text
+        speak(text)
+    }
+
     private fun speak(text: String) {
         if (ttsReady) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nikre_response")
         }
+    }
+
+    private fun safeStart(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Bu amalni bajarib bo'lmadi.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun toggleFlashlight() {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return
+            flashlightOn = !flashlightOn
+            cameraManager.setTorchMode(cameraId, flashlightOn)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Fonarik topilmadi yoki qo'llab-quvvatlanmaydi.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun changeVolume(up: Boolean) {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        am.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+            AudioManager.FLAG_SHOW_UI
+        )
+    }
+
+    /**
+     * Telefonda o'rnatilgan ilovalar ro'yxatidan, aytilgan nomga eng yaqinini topib ochadi.
+     */
+    private fun openAppByName(query: String): Boolean {
+        if (query.isBlank()) return false
+        val pm = packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = pm.queryIntentActivities(mainIntent, 0)
+
+        val normalizedQuery = query.lowercase(Locale.getDefault()).trim()
+
+        val match = apps.firstOrNull { info ->
+            val label = info.loadLabel(pm).toString().lowercase(Locale.getDefault())
+            label.contains(normalizedQuery) || normalizedQuery.contains(label)
+        } ?: return false
+
+        val launchIntent = pm.getLaunchIntentForPackage(match.activityInfo.packageName) ?: return false
+        safeStart(launchIntent)
+        return true
     }
 
     private fun startListening() {
