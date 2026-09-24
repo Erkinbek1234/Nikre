@@ -19,18 +19,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Gradle wrapper huquqlarini berish
-        run: chmod +x ./gradlew || true
-
-      - name: Gradle wrapper bo'lmasa yaratish
-        run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 8.4
-            chmod +x ./gradlew
-          fi
+      - name: Gradle 8.4 ornatish
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.4
 
       - name: APK qurish (debug)
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Tayyor APK'ni yuklash (artifact)
         uses: actions/upload-artifact@v4
