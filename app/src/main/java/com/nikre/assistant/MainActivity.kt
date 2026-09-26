@@ -1,9 +1,12 @@
 package com.nikre.assistant
 
 import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
@@ -14,7 +17,13 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import android.widget.Button
+import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,22 +34,17 @@ import com.nikre.assistant.commands.CommandProcessor
 import com.nikre.assistant.commands.CommandResult
 import java.util.Locale
 
-/**
- * Nikre'ning asosiy ekrani.
- *
- * Tugmani bosib gapirish -> tizim tanib oladi -> CommandProcessor javob/amal tayyorlaydi
- * -> TTS orqali ovozda aytiladi va/yoki kerakli tizim amali bajariladi.
- */
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    private lateinit var statusText: TextView
-    private lateinit var heardText: TextView
-    private lateinit var responseText: TextView
-    private lateinit var micButton: Button
+    private lateinit var chatScroll: ScrollView
+    private lateinit var chatContainer: LinearLayout
+    private lateinit var textInput: EditText
+    private lateinit var micButton: FrameLayout
 
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
     private var flashlightOn = false
+    private var pulseAnimator: ValueAnimator? = null
 
     private val requiredPermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO
@@ -55,18 +59,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        stopPulseAnimation()
         if (result.resultCode == RESULT_OK) {
             val results = result.data
                 ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             val said = results?.firstOrNull().orEmpty()
             if (said.isNotBlank()) {
-                heardText.text = "Siz aytdingiz: \"$said\""
+                addMessage(said, isUser = true)
                 handleCommand(said)
-            } else {
-                statusText.text = "Hech narsa eshitilmadi, qayta urining."
             }
-        } else {
-            statusText.text = "Tinglash bekor qilindi."
         }
     }
 
@@ -74,9 +75,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        statusText = findViewById(R.id.statusText)
-        heardText = findViewById(R.id.heardText)
-        responseText = findViewById(R.id.responseText)
+        chatScroll = findViewById(R.id.chatScroll)
+        chatContainer = findViewById(R.id.chatContainer)
+        textInput = findViewById(R.id.textInput)
         micButton = findViewById(R.id.micButton)
 
         tts = TextToSpeech(this, this)
@@ -88,6 +89,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
             }
         }
+
+        textInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                sendTypedMessage()
+                true
+            } else {
+                false
+            }
+        }
+
+        addMessage("Salom! Men Nikre. Mikrofon tugmasini bosing yoki pastga yozing.", isUser = false)
+    }
+
+    private fun sendTypedMessage() {
+        val text = textInput.text.toString().trim()
+        if (text.isNotBlank()) {
+            addMessage(text, isUser = true)
+            textInput.setText("")
+            handleCommand(text)
+        }
     }
 
     override fun onInit(status: Int) {
@@ -97,9 +118,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 tts.setLanguage(Locale.US)
             }
             ttsReady = true
-            statusText.text = "Nikre tayyor. Mikrofon tugmasini bosing va gapiring."
-        } else {
-            statusText.text = "Ovozli javob (TTS) ishga tushmadi, lekin tinglash ishlaydi."
         }
     }
 
@@ -132,11 +150,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
             is CommandResult.OpenAppByName -> {
                 val launched = openAppByName(result.query)
-                if (launched) {
-                    respond(result.speakText)
-                } else {
-                    respond("\"${result.query}\" nomli ilova topilmadi.")
-                }
+                respond(if (launched) result.speakText else "\"${result.query}\" nomli ilova topilmadi.")
             }
 
             is CommandResult.ToggleFlashlight -> {
@@ -152,8 +166,32 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun respond(text: String) {
-        responseText.text = text
+        addMessage(text, isUser = false)
         speak(text)
+    }
+
+    private fun addMessage(text: String, isUser: Boolean) {
+        val bubble = TextView(this).apply {
+            this.text = text
+            textSize = 15f
+            setPadding(28, 20, 28, 20)
+            setTextColor(if (isUser) Color.WHITE else Color.parseColor("#222222"))
+            background = ContextCompat.getDrawable(
+                this@MainActivity,
+                if (isUser) R.drawable.bubble_user else R.drawable.bubble_nikre
+            )
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (isUser) Gravity.END else Gravity.START
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 12; bottomMargin = 12 }
+        }
+        row.addView(bubble)
+        chatContainer.addView(row)
+        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun speak(text: String) {
@@ -177,7 +215,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             flashlightOn = !flashlightOn
             cameraManager.setTorchMode(cameraId, flashlightOn)
         } catch (e: Exception) {
-            Toast.makeText(this, "Fonarik topilmadi yoki qo'llab-quvvatlanmaydi.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Fonarik topilmadi.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -190,15 +228,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         )
     }
 
-    /**
-     * Telefonda o'rnatilgan ilovalar ro'yxatidan, aytilgan nomga eng yaqinini topib ochadi.
-     */
     private fun openAppByName(query: String): Boolean {
         if (query.isBlank()) return false
         val pm = packageManager
         val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = pm.queryIntentActivities(mainIntent, 0)
-
         val normalizedQuery = query.lowercase(Locale.getDefault()).trim()
 
         val match = apps.firstOrNull { info ->
@@ -212,6 +246,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startListening() {
+        startPulseAnimation()
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
@@ -220,12 +255,36 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         try {
             speechLauncher.launch(intent)
         } catch (e: Exception) {
+            stopPulseAnimation()
             Toast.makeText(
                 this,
                 "Ovoz tanish mavjud emas. Google ilovasi o'rnatilganini tekshiring.",
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    // Siri uslubidagi "pulslash" animatsiyasi: tinglayotganda mikrofon tugmasi kattalashib-kichraydi
+    private fun startPulseAnimation() {
+        pulseAnimator?.cancel()
+        pulseAnimator = ValueAnimator.ofFloat(1.0f, 1.25f).apply {
+            duration = 500
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { animation ->
+                val scale = animation.animatedValue as Float
+                micButton.scaleX = scale
+                micButton.scaleY = scale
+            }
+            start()
+        }
+    }
+
+    private fun stopPulseAnimation() {
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        micButton.scaleX = 1.0f
+        micButton.scaleY = 1.0f
     }
 
     private fun hasAllPermissions(): Boolean =
@@ -247,6 +306,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         tts.stop()
         tts.shutdown()
+        stopPulseAnimation()
         super.onDestroy()
     }
 }

@@ -3,52 +3,73 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp">
+    android:background="#FFFFFF">
 
+    <!-- Sarlavha -->
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Nikre"
-        android:textSize="32sp"
+        android:textSize="22sp"
         android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Ishga tushirilmoqda..."
-        android:textSize="14sp"
         android:gravity="center"
-        android:textColor="#666666"
-        android:layout_marginBottom="32dp" />
+        android:padding="16dp" />
 
-    <Button
-        android:id="@+id/micButton"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:text="🎤"
-        android:textSize="40sp"
-        android:layout_marginBottom="32dp" />
+    <!-- Suhbat tarixi -->
+    <ScrollView
+        android:id="@+id/chatScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
 
-    <TextView
-        android:id="@+id/heardText"
+        <LinearLayout
+            android:id="@+id/chatContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </ScrollView>
+
+    <!-- Pastki panel: matn kiritish + mikrofon -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="16sp"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical">
 
-    <TextView
-        android:id="@+id/responseText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#4A90D9"
-        android:gravity="center" />
+        <EditText
+            android:id="@+id/textInput"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bubble_nikre"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:hint="Nikre'ga yozing..."
+            android:inputType="text"
+            android:imeOptions="actionSend"
+            android:maxLines="1" />
+
+        <FrameLayout
+            android:id="@+id/micButton"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/mic_circle">
+
+            <TextView
+                android:id="@+id/micIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="🎤"
+                android:textSize="22sp"
+                android:gravity="center" />
+
+        </FrameLayout>
+
+    </LinearLayout>
 
 </LinearLayout>
