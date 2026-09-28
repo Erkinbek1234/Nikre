@@ -3,6 +3,7 @@
 
     <!-- Ovoz eshitish (STT, wake word) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Online AI (Claude API va h.k.) uchun -->
     <uses-permission android:name="android.permission.INTERNET" />

@@ -32,6 +32,21 @@
 
     </ScrollView>
 
+    <!-- Jonli matn (gapirayotganda pastda ko'rinadigan vaqtinchalik yozuv) -->
+    <TextView
+        android:id="@+id/liveCaption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textSize="14sp"
+        android:textStyle="italic"
+        android:textColor="#4A90D9"
+        android:gravity="center"
+        android:visibility="gone" />
+
     <!-- Pastki panel: matn kiritish + mikrofon -->
     <LinearLayout
         android:layout_width="match_parent"
