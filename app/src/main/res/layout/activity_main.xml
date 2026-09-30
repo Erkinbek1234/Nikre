@@ -20,7 +20,7 @@
         android:id="@+id/wakeSwitch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="\"Nikre\" deb chaqirish (ilova ochiq bo'lganda)"
+        android:text="&quot;Nikre&quot; deb chaqirish (ilova ochiq bo'lganda)"
         android:textSize="14sp"
         android:paddingStart="16dp"
         android:paddingEnd="16dp" />
