@@ -22,6 +22,7 @@ import android.speech.tts.TextToSpeech
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -61,10 +62,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var speechRecognizer: SpeechRecognizer
     private var isListening = false
 
+    // "Nikre" deb chaqirish rejimi
+    private lateinit var wakeSwitch: CheckBox
+    private var wakeMode = false
+    private var expectCommand = false
+    private var pendingWakeEnable = false
+    private val wakeRestart = Runnable { restartWakeListening() }
+
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {}
 
         override fun onBeginningOfSpeech() {
+            if (wakeMode && !expectCommand) return
             liveCaption.text = ""
             liveCaption.visibility = View.VISIBLE
         }
@@ -88,6 +97,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             isListening = false
             resetMicVisual()
             liveCaption.visibility = View.GONE
+            if (wakeMode) {
+                // Chaqirish rejimida "jim" xatolar (hech narsa eshitilmadi) e'tiborsiz qoldiriladi
+                expectCommand = false
+                val delay = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1500L else 400L
+                scheduleWakeRestart(delay)
+                if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                    Toast.makeText(this@MainActivity, "Mikrofonga ruxsat kerak.", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
             val message = when (error) {
                 SpeechRecognizer.ERROR_NO_MATCH -> "Tushunmadim, qaytadan ayting."
                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Ovoz eshitilmadi."
@@ -107,13 +126,36 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
                 .orEmpty()
+
+            if (wakeMode && !expectCommand) {
+                // Faqat "Nikre" so'zini kutamiz
+                val afterWake = extractAfterWakeWord(said)
+                if (afterWake == null) {
+                    scheduleWakeRestart(200)
+                } else if (afterWake.isBlank()) {
+                    vibrate(60)
+                    expectCommand = true
+                    respond("Eshitaman")
+                    scheduleWakeRestart(900)
+                } else {
+                    vibrate(60)
+                    addMessage(said, isUser = true)
+                    handleCommand(afterWake)
+                    scheduleWakeRestart(900)
+                }
+                return
+            }
+
+            expectCommand = false
             if (said.isNotBlank()) {
                 addMessage(said, isUser = true)
                 handleCommand(said)
             }
+            if (wakeMode) scheduleWakeRestart(900)
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            if (wakeMode && !expectCommand) return
             val partial = partialResults
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
@@ -136,6 +178,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         textInput = findViewById(R.id.textInput)
         micButton = findViewById(R.id.micButton)
         liveCaption = findViewById(R.id.liveCaption)
+        wakeSwitch = findViewById(R.id.wakeSwitch)
 
         tts = TextToSpeech(this, this)
 
@@ -147,6 +190,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
                 return@setOnClickListener
             }
+            if (wakeMode) {
+                Toast.makeText(this, "\"Nikre\" rejimi yoqilgan, gapirishingiz kifoya.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             if (isListening) {
                 speechRecognizer.stopListening()
                 isListening = false
@@ -154,6 +201,27 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 liveCaption.visibility = View.GONE
             } else {
                 startListening()
+            }
+        }
+
+        wakeSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !hasAllPermissions()) {
+                wakeSwitch.isChecked = false
+                pendingWakeEnable = true
+                ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
+                return@setOnCheckedChangeListener
+            }
+            wakeMode = checked
+            if (checked) {
+                expectCommand = false
+                respond("\"Nikre\" deb chaqiring, tinglayapman.")
+                startWakeListening()
+            } else {
+                handler.removeCallbacks(wakeRestart)
+                speechRecognizer.cancel()
+                isListening = false
+                resetMicVisual()
+                liveCaption.visibility = View.GONE
             }
         }
 
@@ -387,12 +455,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             return
         }
         vibrate(30)
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-        }
+        val intent = buildRecognizerIntent()
         try {
             isListening = true
             speechRecognizer.startListening(intent)
@@ -401,6 +464,64 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             resetMicVisual()
             Toast.makeText(this, "Ovoz tanishni boshlab bo'lmadi.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun buildRecognizerIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+    }
+
+    /**
+     * "Nikre" rejimi: doimiy tinglaydi (ilova ochiq turganda), gapirilgan matnda
+     * "nikre" so'zi bormi tekshiradi. Google popup chiqmaydi, bari shu ekranda.
+     */
+    private fun startWakeListening() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "Bu qurilmada ovoz tanish mavjud emas.", Toast.LENGTH_LONG).show()
+            wakeSwitch.isChecked = false
+            return
+        }
+        try {
+            isListening = true
+            speechRecognizer.startListening(buildRecognizerIntent())
+        } catch (e: Exception) {
+            isListening = false
+            scheduleWakeRestart(800)
+        }
+    }
+
+    private fun restartWakeListening() {
+        if (!wakeMode) return
+        try {
+            speechRecognizer.cancel()
+        } catch (e: Exception) {
+            // e'tiborsiz qoldiramiz
+        }
+        startWakeListening()
+    }
+
+    private fun scheduleWakeRestart(delayMs: Long) {
+        if (!wakeMode) return
+        handler.removeCallbacks(wakeRestart)
+        handler.postDelayed(wakeRestart, delayMs)
+    }
+
+    /**
+     * Gapirilgan matnda "nikre" so'zini qidiradi. Topilmasa null, so'zdan keyingi
+     * buyruq bo'sh bo'lsa "" (faqat chaqirilgan), aks holda buyruq matnini qaytaradi.
+     */
+    private fun extractAfterWakeWord(said: String): String? {
+        val lower = said.lowercase(Locale.getDefault())
+        val wakeWords = listOf("nikre", "nikra", "nikri")
+        for (w in wakeWords) {
+            val idx = lower.indexOf(w)
+            if (idx >= 0) {
+                return said.substring(idx + w.length).trim()
+            }
+        }
+        return null
     }
 
     // Mikrofon tugmasini asl holatiga (1.0x) yumshoq qaytaradi
@@ -420,7 +541,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionRequestCode && hasAllPermissions()) {
-            startListening()
+            if (pendingWakeEnable) {
+                pendingWakeEnable = false
+                wakeSwitch.isChecked = true
+            } else {
+                startListening()
+            }
         }
     }
 
