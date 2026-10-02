@@ -5,25 +5,33 @@
     android:orientation="vertical"
     android:background="#FFFFFF">
 
-    <!-- Sarlavha -->
-    <TextView
+    <!-- Sarlavha + sozlamalar tugmasi -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Nikre"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:padding="16dp" />
+        android:padding="12dp">
 
-    <!-- "Nikre" deb chaqirish rejimi -->
-    <CheckBox
-        android:id="@+id/wakeSwitch"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="&quot;Nikre&quot; deb chaqirish (ilova ochiq bo'lganda)"
-        android:textSize="14sp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Nikre"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/menuButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="end|center_vertical"
+            android:text="☰"
+            android:textSize="22sp"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+
+    </FrameLayout>
 
     <!-- Suhbat tarixi -->
     <ScrollView
@@ -41,6 +49,13 @@
             android:orientation="vertical" />
 
     </ScrollView>
+
+    <!-- Tovush to'lqini (tinglayotganda rang-barang animatsiya) -->
+    <com.nikre.assistant.WaveformView
+        android:id="@+id/waveform"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:visibility="gone" />
 
     <!-- Jonli matn (gapirayotganda pastda ko'rinadigan vaqtinchalik yozuv) -->
     <TextView

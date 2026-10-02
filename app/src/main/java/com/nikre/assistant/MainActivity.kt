@@ -19,21 +19,27 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.CheckBox
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.nikre.assistant.commands.CommandProcessor
 import com.nikre.assistant.commands.CommandResult
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -43,6 +49,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var textInput: EditText
     private lateinit var micButton: FrameLayout
     private lateinit var liveCaption: TextView
+    private lateinit var waveform: WaveformView
+    private lateinit var menuButton: TextView
+
+    private val appPrefs by lazy { getSharedPreferences("nikre_settings", Context.MODE_PRIVATE) }
+    private val chatPrefs by lazy { getSharedPreferences("nikre_chat", Context.MODE_PRIVATE) }
+    private var recognizerLanguage = "uz-UZ"
+    private var selectedVoiceName: String? = null
 
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
@@ -63,7 +76,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var isListening = false
 
     // "Nikre" deb chaqirish rejimi
-    private lateinit var wakeSwitch: CheckBox
     private var wakeMode = false
     private var expectCommand = false
     private var pendingWakeEnable = false
@@ -76,6 +88,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (wakeMode && !expectCommand) return
             liveCaption.text = ""
             liveCaption.visibility = View.VISIBLE
+            waveform.start()
         }
 
         override fun onRmsChanged(rmsdB: Float) {
@@ -84,6 +97,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val level = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
             val scale = 1f + level * 0.35f
             micButton.animate().scaleX(scale).scaleY(scale).setDuration(80).start()
+            waveform.setLevel(level)
         }
 
         override fun onBufferReceived(buffer: ByteArray?) {}
@@ -91,12 +105,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         override fun onEndOfSpeech() {
             resetMicVisual()
             liveCaption.visibility = View.GONE
+            waveform.stop()
         }
 
         override fun onError(error: Int) {
             isListening = false
             resetMicVisual()
             liveCaption.visibility = View.GONE
+            waveform.stop()
             if (wakeMode) {
                 // Chaqirish rejimida "jim" xatolar (hech narsa eshitilmadi) e'tiborsiz qoldiriladi
                 expectCommand = false
@@ -122,6 +138,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             isListening = false
             resetMicVisual()
             liveCaption.visibility = View.GONE
+            waveform.stop()
             val said = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
@@ -178,7 +195,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         textInput = findViewById(R.id.textInput)
         micButton = findViewById(R.id.micButton)
         liveCaption = findViewById(R.id.liveCaption)
-        wakeSwitch = findViewById(R.id.wakeSwitch)
+        waveform = findViewById(R.id.waveform)
+        menuButton = findViewById(R.id.menuButton)
+
+        recognizerLanguage = appPrefs.getString("lang", "uz-UZ") ?: "uz-UZ"
+        selectedVoiceName = appPrefs.getString("voice", null)
+        wakeMode = appPrefs.getBoolean("wake", true)
 
         tts = TextToSpeech(this, this)
 
@@ -204,26 +226,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
         }
 
-        wakeSwitch.setOnCheckedChangeListener { _, checked ->
-            if (checked && !hasAllPermissions()) {
-                wakeSwitch.isChecked = false
-                pendingWakeEnable = true
-                ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
-                return@setOnCheckedChangeListener
-            }
-            wakeMode = checked
-            if (checked) {
-                expectCommand = false
-                respond("\"Nikre\" deb chaqiring, tinglayapman.")
-                startWakeListening()
-            } else {
-                handler.removeCallbacks(wakeRestart)
-                speechRecognizer.cancel()
-                isListening = false
-                resetMicVisual()
-                liveCaption.visibility = View.GONE
-            }
-        }
+        menuButton.setOnClickListener { showSettingsDialog() }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
@@ -234,7 +237,137 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
         }
 
-        addMessage("Salom! Men Nikre. Mikrofon tugmasini bosing yoki pastga yozing.", isUser = false)
+        val history = loadChatHistory()
+        if (history.isEmpty()) {
+            addMessage("Salom! Men Nikre. \"Nikre\" deb chaqiring yoki pastga yozing.", isUser = false)
+        } else {
+            for ((text, isUser) in history) {
+                addMessage(text, isUser, save = false)
+            }
+        }
+
+        if (wakeMode) {
+            if (hasAllPermissions()) {
+                startWakeListening()
+            } else {
+                pendingWakeEnable = true
+                ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
+            }
+        }
+    }
+
+    private fun setWakeMode(enabled: Boolean) {
+        wakeMode = enabled
+        appPrefs.edit().putBoolean("wake", enabled).apply()
+        if (enabled) {
+            expectCommand = false
+            if (hasAllPermissions()) {
+                startWakeListening()
+            } else {
+                pendingWakeEnable = true
+                ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
+            }
+        } else {
+            handler.removeCallbacks(wakeRestart)
+            speechRecognizer.cancel()
+            isListening = false
+            resetMicVisual()
+            liveCaption.visibility = View.GONE
+            waveform.stop()
+        }
+    }
+
+    private fun showSettingsDialog() {
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, 0)
+        }
+
+        val wakeRow = Switch(this).apply {
+            text = "\"Nikre\" deb chaqirish rejimi"
+            isChecked = wakeMode
+        }
+        container.addView(wakeRow)
+
+        container.addView(TextView(this).apply {
+            text = "Til:"
+            setPadding(0, pad, 0, 8)
+        })
+        val langNames = listOf("O'zbekcha", "Ruscha", "Inglizcha", "Turkcha", "Turkmancha")
+        val langCodes = listOf("uz-UZ", "ru-RU", "en-US", "tr-TR", "tk-TM")
+        val langSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, langNames)
+            val idx = langCodes.indexOf(recognizerLanguage)
+            setSelection(if (idx >= 0) idx else 0)
+        }
+        container.addView(langSpinner)
+
+        container.addView(TextView(this).apply {
+            text = "Ovoz:"
+            setPadding(0, pad, 0, 8)
+        })
+        val voices = availableVoicesForLanguage(recognizerLanguage.substring(0, 2))
+        val voiceLabels = if (voices.isEmpty()) listOf("Standart ovoz") else voices.mapIndexed { i, v -> "Ovoz ${i + 1} (${v.name.take(18)})" }
+        val voiceSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, voiceLabels)
+            val savedIdx = voices.indexOfFirst { it.name == selectedVoiceName }
+            setSelection(if (savedIdx >= 0) savedIdx else 0)
+        }
+        container.addView(voiceSpinner)
+
+        if (voices.isEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "Bu til uchun qo'shimcha ovozlar topilmadi, standart ovoz ishlatiladi."
+                textSize = 12f
+                setPadding(0, 8, 0, 0)
+            })
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Sozlamalar")
+            .setView(container)
+            .setPositiveButton("Saqlash") { _, _ ->
+                val newLang = langCodes[langSpinner.selectedItemPosition]
+                recognizerLanguage = newLang
+                appPrefs.edit().putString("lang", newLang).apply()
+                applyTtsLanguage(newLang)
+
+                if (voices.isNotEmpty()) {
+                    val chosen = voices[voiceSpinner.selectedItemPosition.coerceIn(0, voices.size - 1)]
+                    selectedVoiceName = chosen.name
+                    appPrefs.edit().putString("voice", chosen.name).apply()
+                    try { tts.voice = chosen } catch (e: Exception) { }
+                }
+
+                setWakeMode(wakeRow.isChecked)
+            }
+            .setNegativeButton("Bekor qilish", null)
+            .show()
+    }
+
+    private fun availableVoicesForLanguage(langPrefix: String): List<Voice> {
+        return try {
+            tts.voices?.filter { it.locale.language == langPrefix }
+                ?.sortedByDescending { it.quality }
+                ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun applyTtsLanguage(tag: String) {
+        try {
+            val locale = Locale.forLanguageTag(tag)
+            val result = tts.setLanguage(locale)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Toast.makeText(this, "Bu til uchun ovoz mavjud emas, standart til ishlatiladi.", Toast.LENGTH_SHORT).show()
+                tts.setLanguage(Locale.US)
+            }
+            selectBestVoice()
+        } catch (e: Exception) {
+            // standart tilda qoldiramiz
+        }
     }
 
     private fun sendTypedMessage() {
@@ -248,11 +381,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts.setLanguage(Locale("uz"))
+            val result = tts.setLanguage(Locale.forLanguageTag(recognizerLanguage))
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 tts.setLanguage(Locale.US)
             }
-            selectBestVoice()
+            val savedVoice = selectedVoiceName
+            val restored = savedVoice != null && tts.voices?.any { it.name == savedVoice } == true
+            if (restored) {
+                try { tts.voice = tts.voices.first { it.name == savedVoice } } catch (e: Exception) { selectBestVoice() }
+            } else {
+                selectBestVoice()
+            }
             tts.setSpeechRate(0.98f)
             tts.setPitch(1.0f)
             ttsReady = true
@@ -347,6 +486,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
             is CommandResult.ClearChat -> {
                 chatContainer.removeAllViews()
+                chatPrefs.edit().remove("history").apply()
                 respond(result.speakText)
             }
         }
@@ -372,7 +512,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         speak(text)
     }
 
-    private fun addMessage(text: String, isUser: Boolean) {
+    private fun addMessage(text: String, isUser: Boolean, save: Boolean = true) {
+        if (save) saveChatMessage(text, isUser)
         val bubble = TextView(this).apply {
             this.text = text
             textSize = 15f
@@ -396,6 +537,37 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         chatContainer.addView(row)
         bubble.animate().alpha(1f).setDuration(220).start()
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun saveChatMessage(text: String, isUser: Boolean) {
+        try {
+            val arr = JSONArray(chatPrefs.getString("history", "[]"))
+            val obj = JSONObject()
+            obj.put("t", text)
+            obj.put("u", isUser)
+            arr.put(obj)
+            // Faqat oxirgi 200 ta xabarni saqlaymiz
+            val trimmed = if (arr.length() > 200) {
+                val newArr = JSONArray()
+                for (i in (arr.length() - 200) until arr.length()) newArr.put(arr.get(i))
+                newArr
+            } else arr
+            chatPrefs.edit().putString("history", trimmed.toString()).apply()
+        } catch (e: Exception) {
+            // saqlash muvaffaqiyatsiz bo'lsa, e'tiborsiz qoldiramiz
+        }
+    }
+
+    private fun loadChatHistory(): List<Pair<String, Boolean>> {
+        return try {
+            val arr = JSONArray(chatPrefs.getString("history", "[]"))
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                o.getString("t") to o.getBoolean("u")
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun speak(text: String) {
@@ -468,7 +640,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun buildRecognizerIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognizerLanguage)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
     }
@@ -480,7 +652,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun startWakeListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             Toast.makeText(this, "Bu qurilmada ovoz tanish mavjud emas.", Toast.LENGTH_LONG).show()
-            wakeSwitch.isChecked = false
+            setWakeMode(false)
             return
         }
         try {
@@ -543,7 +715,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (requestCode == permissionRequestCode && hasAllPermissions()) {
             if (pendingWakeEnable) {
                 pendingWakeEnable = false
-                wakeSwitch.isChecked = true
+                setWakeMode(true)
             } else {
                 startListening()
             }
