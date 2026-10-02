@@ -260,9 +260,97 @@ object CommandProcessor {
             text.startsWith("och ") || (text.contains("ochib ber") && !text.contains("sozlama")) ->
                 CommandResult.OpenAppByName(extractAppName(text), "Ochyapman.")
 
+            text.contains(" javobi ") ->
+                CommandResult.Speak(teachAnswer(context, text))
+
+            fuzzyAny(text, "nechta narsa organgansan", "qancha narsa bilasan", "organganlaring nechta") ->
+                CommandResult.Speak(learnedCount(context))
+
+            text.endsWith(" ni unut") || text.endsWith(" ni unutib yubor") ->
+                CommandResult.Speak(forgetAnswer(context, text.removeSuffix(" ni unutib yubor").removeSuffix(" ni unut")))
+
+            findLearnedAnswer(context, text) != null ->
+                CommandResult.Speak(findLearnedAnswer(context, text)!!)
+
             else ->
-                CommandResult.Speak(pickFallback())
+                CommandResult.Speak(pickFallback() + " Agar bilsangiz, \"" + text + " javobi ...\" deb o'rgating.")
         }
+    }
+
+    // ---------- O'RGATILADIGAN XOTIRA (oddiy savol-javob xotirasi) ----------
+
+    private const val LEARN_PREF = "nikre_learned"
+    private const val LEARN_KEY = "qa_map"
+
+    private fun loadLearned(context: Context): MutableMap<String, String> {
+        return try {
+            val raw = context.getSharedPreferences(LEARN_PREF, Context.MODE_PRIVATE).getString(LEARN_KEY, "{}")
+            val json = org.json.JSONObject(raw ?: "{}")
+            val map = mutableMapOf<String, String>()
+            json.keys().forEach { k -> map[k] = json.getString(k) }
+            map
+        } catch (e: Exception) {
+            mutableMapOf()
+        }
+    }
+
+    private fun saveLearned(context: Context, map: Map<String, String>) {
+        try {
+            val json = org.json.JSONObject()
+            map.forEach { (k, v) -> json.put(k, v) }
+            context.getSharedPreferences(LEARN_PREF, Context.MODE_PRIVATE)
+                .edit().putString(LEARN_KEY, json.toString()).apply()
+        } catch (e: Exception) {
+            // saqlashda xato bo'lsa, e'tiborsiz qoldiramiz
+        }
+    }
+
+    /**
+     * "<savol> javobi <javob>" shaklidagi gapdan savol-javobni ajratib, xotiraga yozadi.
+     */
+    private fun teachAnswer(context: Context, text: String): String {
+        val idx = text.indexOf(" javobi ")
+        if (idx < 0) return "Tushunmadim, \"savol javobi javob\" shaklida ayting."
+        val question = text.substring(0, idx).trim()
+        val answer = text.substring(idx + " javobi ".length).trim()
+        if (question.isBlank() || answer.isBlank()) {
+            return "Savol yoki javobni tushunmadim, qaytadan ayting."
+        }
+        val map = loadLearned(context)
+        map[question] = answer
+        saveLearned(context, map)
+        return "Yodlab oldim: \"$question\" uchun javob — \"$answer\"."
+    }
+
+    /**
+     * Xotiradan savolga mos javobni qidiradi (avval aniq, keyin "fuzzy" moslik bilan).
+     */
+    private fun findLearnedAnswer(context: Context, text: String): String? {
+        val map = loadLearned(context)
+        if (map.isEmpty()) return null
+        map[text]?.let { return it }
+        for ((question, answer) in map) {
+            if (fuzzyAny(text, question)) return answer
+        }
+        return null
+    }
+
+    private fun forgetAnswer(context: Context, question: String): String {
+        val map = loadLearned(context)
+        val key = map.keys.firstOrNull { it == question.trim() || fuzzyAny(question.trim(), it) }
+        return if (key != null) {
+            map.remove(key)
+            saveLearned(context, map)
+            "\"$key\" haqidagi bilimni unutdim."
+        } else {
+            "Bu haqda hech narsa bilmaganman."
+        }
+    }
+
+    private fun learnedCount(context: Context): String {
+        val count = loadLearned(context).size
+        return if (count == 0) "Hali hech narsa o'rganmaganman. Menga biror narsa o'rgating!"
+        else "Men hozircha $count ta narsani o'rgandim."
     }
 
     // ---------- YORDAMCHI FUNKSIYALAR ----------
