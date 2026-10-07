@@ -24,6 +24,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.ArrayAdapter
+import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -32,6 +33,7 @@ import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -79,6 +81,33 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var wakeMode = false
     private var expectCommand = false
     private var pendingWakeEnable = false
+
+    private val modelPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) copyModelFile(uri)
+    }
+
+    private fun copyModelFile(uri: Uri) {
+        Toast.makeText(this, "Model fayli nusxalanmoqda, biroz kuting...", Toast.LENGTH_LONG).show()
+        Thread {
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    LocalAi.modelFile(this).outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                val ok = LocalAi.init(this)
+                runOnUiThread {
+                    val msg = if (ok) "AI model tayyor! Endi savollarga javob bera oladi."
+                    else "Model fayli yuklanmadi — fayl to'g'ri formatda emasligi mumkin."
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Xatolik: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
     private val wakeRestart = Runnable { restartWakeListening() }
 
     private val recognitionListener = object : RecognitionListener {
@@ -254,6 +283,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 ActivityCompat.requestPermissions(this, requiredPermissions, permissionRequestCode)
             }
         }
+
+        if (LocalAi.isModelDownloaded(this)) {
+            Thread { LocalAi.init(this) }.start()
+        }
     }
 
     private fun setWakeMode(enabled: Boolean) {
@@ -323,6 +356,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 setPadding(0, 8, 0, 0)
             })
         }
+
+        container.addView(TextView(this).apply {
+            text = "Offline AI model:"
+            setPadding(0, pad, 0, 8)
+        })
+        container.addView(TextView(this).apply {
+            text = if (LocalAi.isReady) "✅ Yuklangan va tayyor"
+            else if (LocalAi.isModelDownloaded(this@MainActivity)) "⚠️ Fayl bor, lekin ishga tushmadi"
+            else "❌ Hali yuklanmagan"
+            textSize = 13f
+            setPadding(0, 0, 0, 8)
+        })
+        container.addView(Button(this).apply {
+            text = if (LocalAi.isModelDownloaded(this@MainActivity)) "Model faylini almashtirish" else "Model faylini tanlash"
+            setOnClickListener { modelPickerLauncher.launch(arrayOf("*/*")) }
+        })
 
         AlertDialog.Builder(this)
             .setTitle("Sozlamalar")
@@ -488,6 +537,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 chatContainer.removeAllViews()
                 chatPrefs.edit().remove("history").apply()
                 respond(result.speakText)
+            }
+
+            is CommandResult.AskAi -> {
+                if (LocalAi.isReady) {
+                    Toast.makeText(this, "O'ylayapman...", Toast.LENGTH_SHORT).show()
+                    Thread {
+                        val answer = LocalAi.ask(result.prompt)
+                        runOnUiThread { respond(answer) }
+                    }.start()
+                } else {
+                    respond(result.fallbackText)
+                }
             }
         }
     }

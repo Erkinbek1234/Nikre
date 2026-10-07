@@ -56,4 +56,8 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2'
+
+    // --- Telefon ichida (offline) ishlaydigan kichik AI model ---
+    // https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference
+    implementation 'com.google.mediapipe:tasks-genai:0.10.14'
 }

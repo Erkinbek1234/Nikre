@@ -33,6 +33,7 @@ sealed class CommandResult {
     data class ChangeVolume(val up: Boolean, val speakText: String) : CommandResult()
     data class StartTimer(val seconds: Int, val speakText: String) : CommandResult()
     data class ClearChat(val speakText: String) : CommandResult()
+    data class AskAi(val prompt: String, val fallbackText: String) : CommandResult()
 }
 
 object CommandProcessor {
@@ -273,7 +274,10 @@ object CommandProcessor {
                 CommandResult.Speak(findLearnedAnswer(context, text)!!)
 
             else ->
-                CommandResult.Speak(pickFallback() + " Agar bilsangiz, \"" + text + " javobi ...\" deb o'rgating.")
+                CommandResult.AskAi(
+                    prompt = text,
+                    fallbackText = pickFallback() + " Agar bilsangiz, \"" + text + " javobi ...\" deb o'rgating."
+                )
         }
     }
 
