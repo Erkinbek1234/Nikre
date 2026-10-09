@@ -310,95 +310,183 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private var settingsDialog: android.app.Dialog? = null
+    private lateinit var settingsRoot: FrameLayout
+    private lateinit var settingsMainPanel: LinearLayout
+    private lateinit var settingsDetailPanel: LinearLayout
+
+    private val langNames = listOf("O'zbekcha", "Ruscha", "Inglizcha", "Turkcha", "Turkmancha")
+    private val langCodes = listOf("uz-UZ", "ru-RU", "en-US", "tr-TR", "tk-TM")
+
+    /** To'liq ekranli sozlamalar oynasi — bo'lim-bo'lim (menyu -> ichki sahifa). */
     private fun showSettingsDialog() {
         val pad = (16 * resources.displayMetrics.density).toInt()
-        val container = LinearLayout(this).apply {
+
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        settingsDialog = dialog
+
+        settingsRoot = FrameLayout(this).apply {
+            setBackgroundColor(Color.WHITE)
+        }
+        settingsMainPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, 0)
+            setPadding(pad, pad * 2, pad, pad)
         }
+        settingsDetailPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad * 2, pad, pad)
+            visibility = View.GONE
+        }
+        settingsRoot.addView(settingsMainPanel)
+        settingsRoot.addView(settingsDetailPanel)
+        dialog.setContentView(settingsRoot)
 
-        val wakeRow = Switch(this).apply {
+        buildSettingsMainPanel()
+
+        dialog.setOnDismissListener { settingsDialog = null }
+        dialog.show()
+    }
+
+    private fun closeSettingsDialog() {
+        settingsDialog?.dismiss()
+        settingsDialog = null
+    }
+
+    private fun showMainPanel() {
+        settingsDetailPanel.visibility = View.GONE
+        settingsMainPanel.visibility = View.VISIBLE
+    }
+
+    private fun showDetailPanel() {
+        settingsMainPanel.visibility = View.GONE
+        settingsDetailPanel.visibility = View.VISIBLE
+    }
+
+    private fun sectionTitle(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 22f
+        setTextColor(Color.parseColor("#222222"))
+        setPadding(0, 0, 0, (24 * resources.displayMetrics.density).toInt())
+    }
+
+    private fun menuRow(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        text = label
+        textSize = 17f
+        setPadding(0, 28, 0, 28)
+        setTextColor(Color.parseColor("#222222"))
+        isClickable = true
+        isFocusable = true
+        background = ContextCompat.getDrawable(this@MainActivity, android.R.drawable.list_selector_background)
+        setOnClickListener { onClick() }
+    }
+
+    private fun buildSettingsMainPanel() {
+        settingsMainPanel.removeAllViews()
+        settingsMainPanel.addView(sectionTitle("Sozlamalar"))
+
+        settingsMainPanel.addView(Switch(this).apply {
             text = "\"Nikre\" deb chaqirish rejimi"
+            textSize = 16f
             isChecked = wakeMode
-        }
-        container.addView(wakeRow)
-
-        container.addView(TextView(this).apply {
-            text = "Til:"
-            setPadding(0, pad, 0, 8)
-        })
-        val langNames = listOf("O'zbekcha", "Ruscha", "Inglizcha", "Turkcha", "Turkmancha")
-        val langCodes = listOf("uz-UZ", "ru-RU", "en-US", "tr-TR", "tk-TM")
-        val langSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, langNames)
-            val idx = langCodes.indexOf(recognizerLanguage)
-            setSelection(if (idx >= 0) idx else 0)
-        }
-        container.addView(langSpinner)
-
-        container.addView(TextView(this).apply {
-            text = "Ovoz:"
-            setPadding(0, pad, 0, 8)
-        })
-        val voices = availableVoicesForLanguage(recognizerLanguage.substring(0, 2))
-        val voiceLabels = if (voices.isEmpty()) listOf("Standart ovoz") else voices.mapIndexed { i, v -> "Ovoz ${i + 1} (${v.name.take(18)})" }
-        val voiceSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, voiceLabels)
-            val savedIdx = voices.indexOfFirst { it.name == selectedVoiceName }
-            setSelection(if (savedIdx >= 0) savedIdx else 0)
-        }
-        container.addView(voiceSpinner)
-
-        if (voices.isEmpty()) {
-            container.addView(TextView(this).apply {
-                text = "Bu til uchun qo'shimcha ovozlar topilmadi, standart ovoz ishlatiladi."
-                textSize = 12f
-                setPadding(0, 8, 0, 0)
-            })
-        }
-
-        container.addView(TextView(this).apply {
-            text = "Offline AI model:"
-            setPadding(0, pad, 0, 8)
-        })
-        container.addView(TextView(this).apply {
-            text = if (LocalAi.isReady) "✅ Yuklangan va tayyor"
-            else if (LocalAi.isModelDownloaded(this@MainActivity)) "⚠️ Fayl bor, lekin ishga tushmadi"
-            else "❌ Hali yuklanmagan"
-            textSize = 13f
-            setPadding(0, 0, 0, 8)
-        })
-        container.addView(Button(this).apply {
-            text = if (LocalAi.isModelDownloaded(this@MainActivity)) "Model faylini almashtirish" else "Model faylini tanlash"
-            setOnClickListener { modelPickerLauncher.launch(arrayOf("*/*")) }
+            setOnCheckedChangeListener { _, checked -> setWakeMode(checked) }
         })
 
-        AlertDialog.Builder(this)
-            .setTitle("Sozlamalar")
-            .setView(container)
-            .setPositiveButton("Saqlash") { _, _ ->
-                val newLang = langCodes[langSpinner.selectedItemPosition]
+        settingsMainPanel.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (24 * resources.displayMetrics.density).toInt())
+        })
+
+        val langLabel = langNames.getOrElse(langCodes.indexOf(recognizerLanguage)) { "O'zbekcha" }
+        settingsMainPanel.addView(menuRow("🌐  Til: $langLabel") { buildLanguagePanel(); showDetailPanel() })
+
+        val voiceLabel = selectedVoiceName?.take(20) ?: "Standart"
+        settingsMainPanel.addView(menuRow("🔊  Ovoz: $voiceLabel") { buildVoicePanel(); showDetailPanel() })
+
+        val aiStatus = if (LocalAi.isReady) "tayyor" else if (LocalAi.isModelDownloaded(this)) "fayl bor, ishga tushmagan" else "yuklanmagan"
+        settingsMainPanel.addView(menuRow("🤖  Offline AI model: $aiStatus") { buildAiPanel(); showDetailPanel() })
+
+        settingsMainPanel.addView(menuRow("💬  Yangi suhbat boshlash") {
+            chatContainer.removeAllViews()
+            chatPrefs.edit().remove("history").apply()
+            addMessage("Salom! Men Nikre. \"Nikre\" deb chaqiring yoki pastga yozing.", isUser = false)
+            closeSettingsDialog()
+        })
+
+        settingsMainPanel.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (32 * resources.displayMetrics.density).toInt())
+        })
+
+        settingsMainPanel.addView(Button(this).apply {
+            text = "Yopish"
+            setOnClickListener { closeSettingsDialog() }
+        })
+    }
+
+    private fun buildLanguagePanel() {
+        settingsDetailPanel.removeAllViews()
+        settingsDetailPanel.addView(menuRow("← Orqaga") { showMainPanel() })
+        settingsDetailPanel.addView(sectionTitle("Tilni tanlang"))
+        for (i in langNames.indices) {
+            settingsDetailPanel.addView(menuRow(langNames[i]) {
+                val newLang = langCodes[i]
                 recognizerLanguage = newLang
                 appPrefs.edit().putString("lang", newLang).apply()
                 applyTtsLanguage(newLang)
-
-                if (voices.isNotEmpty()) {
-                    val chosen = voices[voiceSpinner.selectedItemPosition.coerceIn(0, voices.size - 1)]
-                    selectedVoiceName = chosen.name
-                    appPrefs.edit().putString("voice", chosen.name).apply()
-                    try { tts.voice = chosen } catch (e: Exception) { }
-                }
-
-                setWakeMode(wakeRow.isChecked)
-            }
-            .setNegativeButton("Bekor qilish", null)
-            .show()
+                buildSettingsMainPanel()
+                showMainPanel()
+            })
+        }
     }
 
-    private fun availableVoicesForLanguage(langPrefix: String): List<Voice> {
+    private fun buildVoicePanel() {
+        settingsDetailPanel.removeAllViews()
+        settingsDetailPanel.addView(menuRow("← Orqaga") { showMainPanel() })
+        settingsDetailPanel.addView(sectionTitle("Ovozni tanlang"))
+        // Faqat joriy tilga emas — qurilmadagi BARCHA mavjud ovozlardan tanlash imkonini beramiz
+        val voices = availableVoices()
+        if (voices.isEmpty()) {
+            settingsDetailPanel.addView(TextView(this).apply {
+                text = "Qurilmada qo'shimcha ovozlar topilmadi, standart ovoz ishlatiladi."
+                textSize = 14f
+                setPadding(0, 16, 0, 0)
+            })
+            return
+        }
+        for ((i, v) in voices.withIndex()) {
+            val label = "Ovoz ${i + 1} — ${v.locale.displayLanguage} (${v.name.take(22)})"
+            settingsDetailPanel.addView(menuRow(label) {
+                selectedVoiceName = v.name
+                appPrefs.edit().putString("voice", v.name).apply()
+                try { tts.voice = v } catch (e: Exception) { }
+                buildSettingsMainPanel()
+                showMainPanel()
+            })
+        }
+    }
+
+    private fun buildAiPanel() {
+        settingsDetailPanel.removeAllViews()
+        settingsDetailPanel.addView(menuRow("← Orqaga") { showMainPanel() })
+        settingsDetailPanel.addView(sectionTitle("Offline AI model"))
+        settingsDetailPanel.addView(TextView(this).apply {
+            text = if (LocalAi.isReady) "✅ Yuklangan va tayyor"
+            else if (LocalAi.isModelDownloaded(this@MainActivity)) "⚠️ Fayl bor, lekin ishga tushmadi"
+            else "❌ Hali yuklanmagan"
+            textSize = 15f
+            setPadding(0, 0, 0, 24)
+        })
+        settingsDetailPanel.addView(Button(this).apply {
+            text = if (LocalAi.isModelDownloaded(this@MainActivity)) "Model faylini almashtirish" else "Model faylini tanlash"
+            setOnClickListener { modelPickerLauncher.launch(arrayOf("*/*")) }
+        })
+    }
+
+    /** Qurilmadagi barcha (istalgan tildagi) mavjud TTS ovozlarini sifat bo'yicha saralab qaytaradi. */
+    private fun availableVoices(): List<Voice> {
         return try {
-            tts.voices?.filter { it.locale.language == langPrefix }
+            tts.voices
+                ?.filterNotNull()
                 ?.sortedByDescending { it.quality }
+                ?.take(15)
                 ?: emptyList()
         } catch (e: Exception) {
             emptyList()
@@ -745,13 +833,37 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
      * Gapirilgan matnda "nikre" so'zini qidiradi. Topilmasa null, so'zdan keyingi
      * buyruq bo'sh bo'lsa "" (faqat chaqirilgan), aks holda buyruq matnini qaytaradi.
      */
+    private fun levenshteinLocal(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        val dp = Array(a.length + 1) { IntArray(b.length + 1) }
+        for (i in 0..a.length) dp[i][0] = i
+        for (j in 0..b.length) dp[0][j] = j
+        for (i in 1..a.length) {
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                dp[i][j] = minOf(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+            }
+        }
+        return dp[a.length][b.length]
+    }
+
+    /**
+     * Gapirilgan matnda "Nikre" so'ziga o'xshash so'zni qidiradi — ovoz tanish
+     * noaniq eshitgan bo'lsa ham (masalan "nikra", "nikri", "nikr") baribir
+     * taniydi. Topilmasa null, buyruq bo'sh bo'lsa "" qaytaradi.
+     */
     private fun extractAfterWakeWord(said: String): String? {
         val lower = said.lowercase(Locale.getDefault())
-        val wakeWords = listOf("nikre", "nikra", "nikri")
-        for (w in wakeWords) {
-            val idx = lower.indexOf(w)
-            if (idx >= 0) {
-                return said.substring(idx + w.length).trim()
+        val words = lower.split(" ", ",", ".", "!", "?").filter { it.isNotBlank() }
+        for (w in words) {
+            val tolerance = if (w.length <= 5) 2 else 3
+            if (levenshteinLocal(w, "nikre") <= tolerance) {
+                // Shu so'zdan keyingi qismni original matndan ajratib olamiz
+                val wordStart = lower.indexOf(w)
+                val afterIdx = wordStart + w.length
+                return if (afterIdx < said.length) said.substring(afterIdx).trim() else ""
             }
         }
         return null
