@@ -494,11 +494,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         })
     }
 
-    /** Qurilmadagi barcha (istalgan tildagi) mavjud TTS ovozlarini sifat bo'yicha saralab qaytaradi. */
+    // O'zbekcha talaffuzga yaqinroq keladigan (lotin/krill yozuvli, fonetik yaqin) tillar.
+    // Yapon, xitoy, arab, koreys va h.k. kabi talaffuzi butunlay boshqacha tillar chiqarib tashlanadi.
+    private val compatibleVoiceLanguages = setOf(
+        "uz", "tr", "az", "kk", "ky", "tt", "tg", "ru", "en", "de", "nl", "sv", "no"
+    )
+
+    /** Qurilmadagi, o'zbekcha talaffuzga mos keladigan TTS ovozlarini sifat bo'yicha saralab qaytaradi. */
     private fun availableVoices(): List<Voice> {
         return try {
             tts.voices
                 ?.filterNotNull()
+                ?.filter { it.locale.language in compatibleVoiceLanguages }
                 ?.sortedByDescending { it.quality }
                 ?.take(15)
                 ?: emptyList()
