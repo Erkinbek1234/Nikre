@@ -437,10 +437,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private val voiceSampleText = "Salom! Men Nikre. Sizga qanday yordam bera olaman?"
+
     private fun buildVoicePanel() {
         settingsDetailPanel.removeAllViews()
-        settingsDetailPanel.addView(menuRow("← Orqaga") { showMainPanel() })
-        settingsDetailPanel.addView(sectionTitle("Ovozni tanlang"))
+        settingsDetailPanel.addView(menuRow("← Orqaga (tanlanganini saqlab)") { buildSettingsMainPanel(); showMainPanel() })
+        settingsDetailPanel.addView(sectionTitle("Ovozni tinglang va tanlang"))
+        settingsDetailPanel.addView(TextView(this).apply {
+            text = "Har birini bosing — o'sha ovozda namuna gapiradi. Yoqqanini tanlang, keyin \"Orqaga\" bosing."
+            textSize = 13f
+            setPadding(0, 0, 0, 24)
+        })
         // Faqat joriy tilga emas — qurilmadagi BARCHA mavjud ovozlardan tanlash imkonini beramiz
         val voices = availableVoices()
         if (voices.isEmpty()) {
@@ -452,14 +459,21 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             return
         }
         for ((i, v) in voices.withIndex()) {
-            val label = "Ovoz ${i + 1} — ${v.locale.displayLanguage} (${v.name.take(22)})"
-            settingsDetailPanel.addView(menuRow(label) {
+            val isSelected = v.name == selectedVoiceName
+            val mark = if (isSelected) "✅ " else "▶️ "
+            val row = menuRow("$mark Ovoz ${i + 1} — ${v.locale.displayLanguage} (${v.name.take(20)})") {
                 selectedVoiceName = v.name
                 appPrefs.edit().putString("voice", v.name).apply()
-                try { tts.voice = v } catch (e: Exception) { }
-                buildSettingsMainPanel()
-                showMainPanel()
-            })
+                try {
+                    tts.voice = v
+                    tts.speak(voiceSampleText, TextToSpeech.QUEUE_FLUSH, null, "voice_preview")
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Bu ovozda xatolik, boshqasini sinab ko'ring.", Toast.LENGTH_SHORT).show()
+                }
+                buildVoicePanel()
+                showDetailPanel()
+            }
+            settingsDetailPanel.addView(row)
         }
     }
 
